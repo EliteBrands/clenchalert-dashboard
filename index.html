@@ -1,0 +1,273 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ClenchAlert - Weekly Performance Dashboard</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:'Segoe UI',Tahoma,Geneva,Verdana,sans-serif;background:#0f1923;color:#e0e6ed;min-height:100vh}
+.dashboard-header{background:linear-gradient(135deg,#1a2a3a 0%,#0d1b2a 100%);padding:28px 40px;border-bottom:3px solid #f59e0b;display:flex;align-items:center;justify-content:space-between}
+.dashboard-header h1{font-size:26px;font-weight:700;color:#fff}
+.dashboard-header h1 span{color:#f59e0b}
+.dashboard-header .subtitle{font-size:14px;color:#8899aa;margin-top:4px}
+.header-right{display:flex;align-items:center;gap:14px}
+.header-badge{background:#f59e0b;color:#0f1923;padding:8px 18px;border-radius:20px;font-weight:700;font-size:13px;letter-spacing:1px}
+.refresh-btn{background:#253545;color:#f59e0b;border:2px solid #f59e0b;padding:8px 18px;border-radius:20px;font-weight:700;font-size:13px;cursor:pointer;transition:all .2s}
+.refresh-btn:hover{background:#f59e0b;color:#0f1923}
+.loading-overlay{position:fixed;top:0;left:0;width:100%;height:100%;background:#0f1923;display:flex;flex-direction:column;align-items:center;justify-content:center;z-index:9999}
+.loading-overlay.hidden{display:none}
+.spinner{width:50px;height:50px;border:4px solid #253545;border-top:4px solid #f59e0b;border-radius:50%;animation:spin .8s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+.loading-text{color:#8899aa;margin-top:16px;font-size:14px}
+.last-updated{font-size:12px;color:#556677;text-align:center;padding:10px}
+.date-filter-bar{display:flex;align-items:center;gap:16px;padding:16px 40px;background:#152232;border-bottom:1px solid #253545;flex-wrap:wrap}
+.date-filter-bar label{font-size:13px;color:#8899aa;font-weight:600;text-transform:uppercase;letter-spacing:.5px}
+.date-filter-bar select{background:#1a2a3a;color:#fff;border:1px solid #354555;border-radius:8px;padding:8px 14px;font-size:13px;cursor:pointer;min-width:200px;appearance:auto}
+.date-filter-bar select:hover{border-color:#f59e0b}
+.date-filter-bar select:focus{outline:none;border-color:#f59e0b;box-shadow:0 0 0 2px rgba(245,158,11,0.2)}
+.date-filter-bar .reset-btn{background:transparent;color:#f59e0b;border:1px solid #f59e0b;padding:7px 16px;border-radius:8px;font-size:12px;font-weight:600;cursor:pointer;transition:all .2s}
+.date-filter-bar .reset-btn:hover{background:#f59e0b;color:#0f1923}
+.kpi-row{display:grid;grid-template-columns:repeat(5,1fr);gap:16px;padding:24px 40px 0}
+.kpi-card{background:linear-gradient(135deg,#1a2a3a,#162232);border:1px solid #253545;border-radius:12px;padding:18px 20px;text-align:center;transition:transform .2s,box-shadow .2s}
+.kpi-card:hover{transform:translateY(-2px);box-shadow:0 8px 25px rgba(0,0,0,.3)}
+.kpi-card .kpi-label{font-size:11px;text-transform:uppercase;letter-spacing:1.2px;color:#7a8fa3;margin-bottom:8px}
+.kpi-card .kpi-value{font-size:22px;font-weight:700;color:#fff}
+.kpi-card .kpi-change{font-size:12px;margin-top:6px;font-weight:600;position:relative;display:inline-block;cursor:help}
+.kpi-change.up{color:#22c55e}
+.kpi-change.down{color:#ef4444}
+.kpi-tooltip{visibility:hidden;opacity:0;position:absolute;bottom:130%;left:50%;transform:translateX(-50%);background:#0d1b2a;color:#ccc;padding:10px 14px;border-radius:8px;font-size:11px;font-weight:400;white-space:nowrap;z-index:100;border:1px solid #354555;box-shadow:0 4px 15px rgba(0,0,0,.4);transition:opacity .2s,visibility .2s;pointer-events:none;text-transform:none;letter-spacing:0}
+.kpi-tooltip::after{content:'';position:absolute;top:100%;left:50%;transform:translateX(-50%);border:6px solid transparent;border-top-color:#354555}
+.kpi-change:hover .kpi-tooltip{visibility:visible;opacity:1}
+.dashboard-container{padding:24px 40px 40px;display:flex;flex-direction:column;gap:28px}
+.section{background:linear-gradient(135deg,#1a2a3a 0%,#152232 100%);border:1px solid #253545;border-radius:16px;padding:28px;box-shadow:0 4px 20px rgba(0,0,0,.2)}
+.section-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:20px;flex-wrap:wrap;gap:12px}
+.section-title{font-size:18px;font-weight:700;color:#fff;display:flex;align-items:center;gap:10px}
+.section-title .icon{width:32px;height:32px;border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:16px}
+.icon-meta{background:#1e40af}
+.icon-gads{background:#059669}
+.icon-revenue{background:#d97706}
+.toggle-group{display:flex;gap:8px;flex-wrap:wrap}
+.toggle-btn{display:flex;align-items:center;gap:6px;padding:6px 14px;border-radius:20px;border:2px solid;background:transparent;color:#e0e6ed;font-size:12px;font-weight:600;cursor:pointer;transition:all .25s;user-select:none}
+.toggle-btn .dot{width:10px;height:10px;border-radius:50%;transition:all .25s}
+.toggle-btn.active{color:#fff}
+.toggle-btn:not(.active){opacity:.4;border-color:#555!important}
+.toggle-btn:not(.active) .dot{background:#555!important}
+.chart-wrapper{position:relative;width:100%;height:320px}
+.stats-row{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:12px;margin-top:20px;padding-top:20px;border-top:1px solid #253545}
+.stat-item{text-align:center}
+.stat-item .stat-label{font-size:11px;text-transform:uppercase;letter-spacing:1px;color:#7a8fa3}
+.stat-item .stat-value{font-size:18px;font-weight:700;color:#fff;margin-top:4px}
+@media(max-width:900px){.kpi-row{grid-template-columns:repeat(2,1fr)}.dashboard-header{flex-direction:column;gap:12px;text-align:center}.dashboard-container{padding:16px}.date-filter-bar{flex-direction:column;align-items:flex-start}}
+</style>
+</head>
+<body>
+<div class="loading-overlay" id="loadingOverlay"><div class="spinner"></div><div class="loading-text">Loading data from Google Sheets...</div></div>
+<div class="dashboard-header"><div><h1><span>ClenchAlert</span> &mdash; Weekly Performance Dashboard</h1><div class="subtitle" id="dateSubtitle">Meta Ads, Google Ads &amp; Shopify Analytics</div></div><div class="header-right"><button class="refresh-btn" onclick="loadData()">&#x21BB; Refresh Data</button><div class="header-badge">LIVE REPORT</div></div></div>
+<div class="date-filter-bar">
+<label>From:</label><select id="dateFrom" onchange="applyFilter()"></select>
+<label>To:</label><select id="dateTo" onchange="applyFilter()"></select>
+<button class="reset-btn" onclick="resetFilter()">Show All Weeks</button>
+<span id="filterInfo" style="color:#556677;font-size:12px;margin-left:auto"></span>
+</div>
+<div class="kpi-row">
+<div class="kpi-card"><div class="kpi-label">Total Meta Spend</div><div class="kpi-value" id="kpi-meta-spend">--</div><div class="kpi-change" id="kpi-meta-spend-ch"></div></div>
+<div class="kpi-card"><div class="kpi-label">Total GAds Spend</div><div class="kpi-value" id="kpi-gads-spend">--</div><div class="kpi-change" id="kpi-gads-spend-ch"></div></div>
+<div class="kpi-card"><div class="kpi-label">Shopify Revenue</div><div class="kpi-value" id="kpi-shop-rev">--</div><div class="kpi-change" id="kpi-shop-rev-ch"></div></div>
+<div class="kpi-card"><div class="kpi-label">MER (Latest)</div><div class="kpi-value" id="kpi-mer">--</div><div class="kpi-change" id="kpi-mer-ch"></div></div>
+<div class="kpi-card"><div class="kpi-label">Total Purchases</div><div class="kpi-value" id="kpi-purchases">--</div><div class="kpi-change" id="kpi-purchases-ch"></div></div>
+</div>
+<div class="dashboard-container">
+<div class="section"><div class="section-header"><div class="section-title"><div class="icon icon-meta">&#128241;</div>Meta Ads Performance</div><div class="toggle-group" id="toggles-meta"></div></div><div class="chart-wrapper"><canvas id="metaChart"></canvas></div><div class="stats-row" id="meta-stats"></div></div>
+<div class="section"><div class="section-header"><div class="section-title"><div class="icon icon-gads">&#128202;</div>Google Ads Performance</div><div class="toggle-group" id="toggles-gads"></div></div><div class="chart-wrapper"><canvas id="gadsChart"></canvas></div><div class="stats-row" id="gads-stats"></div></div>
+<div class="section"><div class="section-header"><div class="section-title"><div class="icon icon-revenue">&#128176;</div>Revenue &amp; ROAS Overview</div><div class="toggle-group" id="toggles-revenue"></div></div><div class="chart-wrapper"><canvas id="revenueChart"></canvas></div><div class="stats-row" id="revenue-stats"></div></div>
+</div>
+<div class="last-updated" id="lastUpdated"></div>
+<script>
+/* Data source: Published Google Sheet via gviz CSV endpoint */
+const CSV_URL='https://docs.google.com/spreadsheets/d/1h8Hscx8_8jiHv_mFrAnWz67AfwigpRC5ma_Rpi4k50c/gviz/tq?tqx=out:csv';
+let metaChart=null,gadsChart=null,revenueChart=null;
+let allData=null;
+
+function parseCSV(csv){const lines=csv.trim().split('\n');const headers=parseCSVLine(lines[0]);const rows=[];for(let i=1;i<lines.length;i++){const vals=parseCSVLine(lines[i]);if(vals.length>=18&&vals[0].trim()!=='')rows.push(vals)}return{headers,rows}}
+
+function parseCSVLine(line){const result=[];let current='';let inQuotes=false;for(let i=0;i<line.length;i++){const ch=line[i];if(ch==='"'){if(inQuotes&&i+1<line.length&&line[i+1]==='"'){current+='"';i++}else{inQuotes=!inQuotes}}else if(ch===','&&!inQuotes){result.push(current.trim());current=''}else{current+=ch}}result.push(current.trim());return result}
+
+function cleanNum(s){if(!s)return 0;return parseFloat(s.replace(/[,$%]/g,''))||0}
+function shortenDateRange(s){const parts=s.split(' - ');if(parts.length!==2)return s;const a=parts[0].trim().split('/');const b=parts[1].trim().split('/');return a[0]+'/'+a[1]+' - '+b[0]+'/'+b[1]}
+function fmt(n){return Math.round(n).toLocaleString('en-US')}
+function fmtMoney(n){return '$'+n.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2})}
+function fmtPct(n){return Math.round(n)+'%'}
+function sum(arr){return arr.reduce((a,b)=>a+b,0)}
+function avg(arr){return arr.length?sum(arr)/arr.length:0}
+
+function weekChange(arr,dateLabels){
+if(arr.length<2)return{val:'N/A',dir:'up',current:'',previous:''};
+const last=arr[arr.length-1],prev=arr[arr.length-2];
+const currentWeek=dateLabels?dateLabels[dateLabels.length-1]:'';
+const previousWeek=dateLabels?dateLabels[dateLabels.length-2]:'';
+if(prev===0)return{val:'100%',dir:'up',current:currentWeek,previous:previousWeek};
+const pct=((last-prev)/prev*100).toFixed(1);
+return{val:Math.abs(pct)+'%',dir:pct>=0?'up':'down',current:currentWeek,previous:previousWeek}}
+
+function setKPI(id,value,chId,arr,dateLabels){
+document.getElementById(id).textContent=value;
+var ch=weekChange(arr,dateLabels);
+var el=document.getElementById(chId);
+var arrow=ch.dir==='up'?'\u25B2':'\u25BC';
+var direction=ch.dir==='up'?'increase':'decrease';
+/* Build tooltip with safe DOM methods */
+var wrapper=document.createElement('span');
+wrapper.className='kpi-change '+ch.dir;
+wrapper.style.cursor='help';
+wrapper.textContent=arrow+' '+ch.val+' WoW';
+var tip=document.createElement('span');
+tip.className='kpi-tooltip';
+if(ch.current&&ch.previous){
+tip.textContent='WoW: '+ch.current+' vs '+ch.previous+' '+arrow+' '+ch.val+' '+direction;
+}else{tip.textContent='Not enough data to compare'}
+wrapper.appendChild(tip);
+el.textContent='';
+el.className='kpi-change '+ch.dir;
+el.appendChild(wrapper)}
+
+function createToggles(containerId,chart,metrics,colors){
+var container=document.getElementById(containerId);
+container.textContent='';
+metrics.forEach(function(m,i){
+var btn=document.createElement('button');
+btn.className='toggle-btn active';
+btn.style.borderColor=colors[i];
+var dot=document.createElement('span');
+dot.className='dot';
+dot.style.background=colors[i];
+btn.appendChild(dot);
+btn.appendChild(document.createTextNode(m));
+btn.addEventListener('click',function(){
+this.classList.toggle('active');
+chart.setDatasetVisibility(i,this.classList.contains('active'));
+chart.update()});
+container.appendChild(btn)})}
+
+function populateStats(containerId,items){
+var container=document.getElementById(containerId);
+container.textContent='';
+items.forEach(function(item){
+var div=document.createElement('div');
+div.className='stat-item';
+var lbl=document.createElement('div');
+lbl.className='stat-label';
+lbl.textContent=item.label;
+var val=document.createElement('div');
+val.className='stat-value';
+val.textContent=item.value;
+div.appendChild(lbl);
+div.appendChild(val);
+container.appendChild(div)})}
+
+function populateDateDropdowns(fullDates){
+var fromSel=document.getElementById('dateFrom');
+var toSel=document.getElementById('dateTo');
+fromSel.textContent='';toSel.textContent='';
+fullDates.forEach(function(d,i){
+var shortD=shortenDateRange(d);
+var opt1=document.createElement('option');
+opt1.value=String(i);opt1.textContent=shortD;
+var opt2=document.createElement('option');
+opt2.value=String(i);opt2.textContent=shortD;
+fromSel.appendChild(opt1);
+toSel.appendChild(opt2)});
+toSel.value=String(fullDates.length-1);
+fromSel.value='0'}
+
+function applyFilter(){
+if(!allData)return;
+var fromIdx=parseInt(document.getElementById('dateFrom').value);
+var toIdx=parseInt(document.getElementById('dateTo').value);
+if(fromIdx>toIdx){document.getElementById('filterInfo').textContent='\u26A0 "From" must be before "To"';return}
+var keys=Object.keys(allData);
+var filtered={};
+keys.forEach(function(k){filtered[k]=Array.isArray(allData[k])?allData[k].slice(fromIdx,toIdx+1):allData[k]});
+var weeks=toIdx-fromIdx+1;
+document.getElementById('filterInfo').textContent='Showing '+weeks+' week'+(weeks!==1?'s':'')+' of '+allData.fullDates.length+' total';
+buildDashboard(filtered)}
+
+function resetFilter(){
+if(!allData)return;
+document.getElementById('dateFrom').value='0';
+document.getElementById('dateTo').value=String(allData.fullDates.length-1);
+document.getElementById('filterInfo').textContent='Showing all '+allData.fullDates.length+' weeks';
+buildDashboard(allData)}
+
+var tooltipBase={backgroundColor:'#1a2a3a',titleColor:'#fff',bodyColor:'#ccc',borderColor:'#f59e0b',borderWidth:1,padding:12,cornerRadius:8};
+
+function buildDashboard(d){
+var labels=d.labels;
+setKPI('kpi-meta-spend',fmtMoney(sum(d.metaSpend)),'kpi-meta-spend-ch',d.metaSpend,d.labels);
+setKPI('kpi-gads-spend',fmtMoney(sum(d.gadsSpend)),'kpi-gads-spend-ch',d.gadsSpend,d.labels);
+setKPI('kpi-shop-rev',fmtMoney(sum(d.shopifyRev)),'kpi-shop-rev-ch',d.shopifyRev,d.labels);
+setKPI('kpi-mer',fmtPct(d.mer[d.mer.length-1]),'kpi-mer-ch',d.mer,d.labels);
+setKPI('kpi-purchases',fmt(sum(d.totalPurchases)),'kpi-purchases-ch',d.totalPurchases,d.labels);
+if(labels.length>0){document.getElementById('dateSubtitle').textContent='Meta Ads, Google Ads & Shopify Analytics \u2022 '+d.fullDates[0]+' \u2013 '+d.fullDates[d.fullDates.length-1].split(' - ')[1]}
+if(metaChart){metaChart.destroy();metaChart=null}
+if(gadsChart){gadsChart.destroy();gadsChart=null}
+if(revenueChart){revenueChart.destroy();revenueChart=null}
+
+/* Section 1: Meta Ads Performance */
+metaChart=new Chart(document.getElementById('metaChart'),{type:'bar',data:{labels:labels,datasets:[
+{label:'Meta Spend',data:d.metaSpend,backgroundColor:'#ef444460',borderColor:'#ef4444',borderWidth:2,borderRadius:6,yAxisID:'y1',order:7},
+{label:'Meta Impressions',data:d.metaImpressions,type:'line',borderColor:'#3b82f6',backgroundColor:'#3b82f620',borderWidth:3,pointRadius:5,pointHoverRadius:8,pointBackgroundColor:'#3b82f6',pointBorderColor:'#fff',pointBorderWidth:2,tension:.3,yAxisID:'y',order:6},
+{label:'Outbound Clicks',data:d.metaOutboundClicks,type:'line',borderColor:'#22c55e',backgroundColor:'#22c55e20',borderWidth:3,pointRadius:5,pointHoverRadius:8,pointBackgroundColor:'#22c55e',pointBorderColor:'#fff',pointBorderWidth:2,tension:.3,yAxisID:'y2',order:5},
+{label:'Add to Carts',data:d.metaAddToCarts,type:'line',borderColor:'#06b6d4',backgroundColor:'#06b6d420',borderWidth:3,pointRadius:5,pointHoverRadius:8,pointBackgroundColor:'#06b6d4',pointBorderColor:'#fff',pointBorderWidth:2,tension:.3,yAxisID:'y2',order:4},
+{label:'Purchases',data:d.metaPurchases,type:'line',borderColor:'#a855f7',backgroundColor:'#a855f720',borderWidth:3,pointRadius:5,pointHoverRadius:8,pointBackgroundColor:'#a855f7',pointBorderColor:'#fff',pointBorderWidth:2,tension:.3,yAxisID:'y2',order:3},
+{label:'Meta Value',data:d.metaValue,type:'line',borderColor:'#f59e0b',backgroundColor:'#f59e0b20',borderWidth:3,pointRadius:5,pointHoverRadius:8,pointBackgroundColor:'#f59e0b',pointBorderColor:'#fff',pointBorderWidth:2,tension:.3,yAxisID:'y1',order:2},
+{label:'Meta ROAS',data:d.metaRoas,type:'line',borderColor:'#f97316',backgroundColor:'#f9731620',borderWidth:3,pointRadius:6,pointHoverRadius:9,pointBackgroundColor:'#f97316',pointBorderColor:'#fff',pointBorderWidth:2,tension:.3,borderDash:[6,3],yAxisID:'y3',order:1},
+{label:'Page Engagement',data:d.metaPageEngagement,type:'line',borderColor:'#ec4899',backgroundColor:'#ec489920',borderWidth:2,pointRadius:4,pointHoverRadius:7,pointBackgroundColor:'#ec4899',pointBorderColor:'#fff',pointBorderWidth:2,tension:.3,yAxisID:'y',order:0}
+]},options:{responsive:true,maintainAspectRatio:false,interaction:{mode:'index',intersect:false},plugins:{legend:{display:false},tooltip:{...tooltipBase,callbacks:{label:function(ctx){if(ctx.dataset.label==='Meta ROAS')return ctx.dataset.label+': '+ctx.parsed.y+'%';if(ctx.dataset.label==='Meta Spend'||ctx.dataset.label==='Meta Value')return ctx.dataset.label+': '+fmtMoney(ctx.parsed.y);return ctx.dataset.label+': '+ctx.parsed.y.toLocaleString()}}}},scales:{x:{grid:{color:'rgba(255,255,255,0.06)'},ticks:{color:'#7a8fa3',font:{size:11}}},y:{type:'linear',position:'left',title:{display:true,text:'Impressions / Engagement',color:'#3b82f6',font:{size:12,weight:'bold'}},grid:{color:'rgba(255,255,255,0.06)'},ticks:{color:'#3b82f6',callback:function(v){return(v/1000).toFixed(0)+'K'}}},y1:{type:'linear',position:'right',title:{display:true,text:'Spend / Value ($)',color:'#ef4444',font:{size:12,weight:'bold'}},grid:{drawOnChartArea:false},ticks:{color:'#ef4444',callback:function(v){return'$'+(v>=1000?(v/1000).toFixed(1)+'K':v.toFixed(0))}}},y2:{type:'linear',display:false},y3:{type:'linear',position:'right',title:{display:true,text:'ROAS (%)',color:'#f97316',font:{size:12,weight:'bold'}},grid:{drawOnChartArea:false},ticks:{color:'#f97316',callback:function(v){return v+'%'}}}}}});
+createToggles('toggles-meta',metaChart,['Spend','Impressions','Clicks','Add to Carts','Purchases','Value','ROAS','Engagement'],['#ef4444','#3b82f6','#22c55e','#06b6d4','#a855f7','#f59e0b','#f97316','#ec4899']);
+populateStats('meta-stats',[{label:'Avg Weekly Spend',value:fmtMoney(avg(d.metaSpend))},{label:'Total Impressions',value:fmt(sum(d.metaImpressions))},{label:'Total Clicks',value:fmt(sum(d.metaOutboundClicks))},{label:'Total Purchases',value:fmt(sum(d.metaPurchases))},{label:'Avg ROAS',value:fmtPct(avg(d.metaRoas))}]);
+
+/* Section 2: Google Ads Performance */
+gadsChart=new Chart(document.getElementById('gadsChart'),{type:'bar',data:{labels:labels,datasets:[
+{label:'GAds Spend',data:d.gadsSpend,backgroundColor:'#ef444460',borderColor:'#ef4444',borderWidth:2,borderRadius:6,yAxisID:'y1',order:6},
+{label:'GAds Impressions',data:d.gadsImpressions,type:'line',borderColor:'#3b82f6',backgroundColor:'#3b82f620',borderWidth:3,pointRadius:5,pointHoverRadius:8,pointBackgroundColor:'#3b82f6',pointBorderColor:'#fff',pointBorderWidth:2,tension:.3,yAxisID:'y',order:5},
+{label:'GAds Clicks',data:d.gadsClicks,type:'line',borderColor:'#22c55e',backgroundColor:'#22c55e20',borderWidth:3,pointRadius:5,pointHoverRadius:8,pointBackgroundColor:'#22c55e',pointBorderColor:'#fff',pointBorderWidth:2,tension:.3,yAxisID:'y2',order:4},
+{label:'GAds Purchases',data:d.gadsPurchases,type:'line',borderColor:'#a855f7',backgroundColor:'#a855f720',borderWidth:3,pointRadius:5,pointHoverRadius:8,pointBackgroundColor:'#a855f7',pointBorderColor:'#fff',pointBorderWidth:2,tension:.3,yAxisID:'y2',order:3},
+{label:'GAds Value',data:d.gadsValue,type:'line',borderColor:'#06b6d4',backgroundColor:'#06b6d420',borderWidth:3,pointRadius:5,pointHoverRadius:8,pointBackgroundColor:'#06b6d4',pointBorderColor:'#fff',pointBorderWidth:2,tension:.3,yAxisID:'y1',order:2},
+{label:'GAds ROAS',data:d.gadsRoas,type:'line',borderColor:'#f59e0b',backgroundColor:'#f59e0b20',borderWidth:3,pointRadius:6,pointHoverRadius:9,pointBackgroundColor:'#f59e0b',pointBorderColor:'#fff',pointBorderWidth:2,tension:.3,borderDash:[6,3],yAxisID:'y3',order:1}
+]},options:{responsive:true,maintainAspectRatio:false,interaction:{mode:'index',intersect:false},plugins:{legend:{display:false},tooltip:{...tooltipBase,callbacks:{label:function(ctx){if(ctx.dataset.label==='GAds ROAS')return ctx.dataset.label+': '+ctx.parsed.y+'%';if(ctx.dataset.label==='GAds Spend'||ctx.dataset.label==='GAds Value')return ctx.dataset.label+': '+fmtMoney(ctx.parsed.y);return ctx.dataset.label+': '+ctx.parsed.y.toLocaleString()}}}},scales:{x:{grid:{color:'rgba(255,255,255,0.06)'},ticks:{color:'#7a8fa3',font:{size:11}}},y:{type:'linear',position:'left',title:{display:true,text:'Impressions',color:'#3b82f6',font:{size:12,weight:'bold'}},grid:{color:'rgba(255,255,255,0.06)'},ticks:{color:'#3b82f6',callback:function(v){return(v/1000).toFixed(0)+'K'}}},y1:{type:'linear',position:'right',title:{display:true,text:'Spend / Value ($)',color:'#ef4444',font:{size:12,weight:'bold'}},grid:{drawOnChartArea:false},ticks:{color:'#ef4444',callback:function(v){return'$'+(v>=1000?(v/1000).toFixed(1)+'K':v.toFixed(0))}}},y2:{type:'linear',display:false},y3:{type:'linear',position:'right',title:{display:true,text:'ROAS (%)',color:'#f59e0b',font:{size:12,weight:'bold'}},grid:{drawOnChartArea:false},ticks:{color:'#f59e0b',callback:function(v){return v+'%'}}}}}});
+createToggles('toggles-gads',gadsChart,['Spend','Impressions','Clicks','Purchases','Value','ROAS'],['#ef4444','#3b82f6','#22c55e','#a855f7','#06b6d4','#f59e0b']);
+populateStats('gads-stats',[{label:'Total Spend',value:fmtMoney(sum(d.gadsSpend))},{label:'Total Impressions',value:fmt(sum(d.gadsImpressions))},{label:'Total Clicks',value:fmt(sum(d.gadsClicks))},{label:'Total Purchases',value:fmt(sum(d.gadsPurchases))},{label:'Avg ROAS',value:fmtPct(avg(d.gadsRoas))}]);
+
+/* Section 3: Revenue & ROAS Overview */
+revenueChart=new Chart(document.getElementById('revenueChart'),{type:'bar',data:{labels:labels,datasets:[
+{label:'Shopify Revenue',data:d.shopifyRev,backgroundColor:'#22c55e50',borderColor:'#22c55e',borderWidth:2,borderRadius:6,yAxisID:'y',order:7},
+{label:'Shopify Returns',data:d.shopifyReturns,backgroundColor:'#ef444450',borderColor:'#ef4444',borderWidth:2,borderRadius:6,yAxisID:'y',order:6},
+{label:'Meta Value',data:d.metaValue,type:'line',borderColor:'#3b82f6',backgroundColor:'#3b82f620',borderWidth:3,pointRadius:5,pointHoverRadius:8,pointBackgroundColor:'#3b82f6',pointBorderColor:'#fff',pointBorderWidth:2,tension:.3,yAxisID:'y',order:5},
+{label:'GAds Value',data:d.gadsValue,type:'line',borderColor:'#06b6d4',backgroundColor:'#06b6d420',borderWidth:3,pointRadius:5,pointHoverRadius:8,pointBackgroundColor:'#06b6d4',pointBorderColor:'#fff',pointBorderWidth:2,tension:.3,yAxisID:'y',order:4},
+{label:'Meta ROAS',data:d.metaRoas,type:'line',borderColor:'#f59e0b',backgroundColor:'#f59e0b20',borderWidth:3,pointRadius:5,pointHoverRadius:8,pointBackgroundColor:'#f59e0b',pointBorderColor:'#fff',pointBorderWidth:2,tension:.3,yAxisID:'y1',order:3},
+{label:'GAds ROAS',data:d.gadsRoas,type:'line',borderColor:'#a855f7',backgroundColor:'#a855f720',borderWidth:3,pointRadius:5,pointHoverRadius:8,pointBackgroundColor:'#a855f7',pointBorderColor:'#fff',pointBorderWidth:2,tension:.3,yAxisID:'y1',order:2},
+{label:'MER',data:d.mer,type:'line',borderColor:'#f97316',backgroundColor:'#f9731620',borderWidth:3,pointRadius:6,pointHoverRadius:9,pointBackgroundColor:'#f97316',pointBorderColor:'#fff',pointBorderWidth:2,tension:.3,borderDash:[6,3],yAxisID:'y1',order:1}
+]},options:{responsive:true,maintainAspectRatio:false,interaction:{mode:'index',intersect:false},plugins:{legend:{display:false},tooltip:{...tooltipBase,callbacks:{label:function(ctx){if(['Meta ROAS','GAds ROAS','MER'].includes(ctx.dataset.label))return ctx.dataset.label+': '+ctx.parsed.y+'%';return ctx.dataset.label+': '+fmtMoney(ctx.parsed.y)}}}},scales:{x:{grid:{color:'rgba(255,255,255,0.06)'},ticks:{color:'#7a8fa3',font:{size:11}}},y:{type:'linear',position:'left',title:{display:true,text:'Revenue ($)',color:'#22c55e',font:{size:12,weight:'bold'}},grid:{color:'rgba(255,255,255,0.06)'},ticks:{color:'#22c55e',callback:function(v){return'$'+(v/1000).toFixed(0)+'K'}}},y1:{type:'linear',position:'right',title:{display:true,text:'ROAS / MER (%)',color:'#f59e0b',font:{size:12,weight:'bold'}},grid:{drawOnChartArea:false},ticks:{color:'#f59e0b',callback:function(v){return v+'%'}}}}}});
+createToggles('toggles-revenue',revenueChart,['Shopify Rev','Returns','Meta Value','GAds Value','Meta ROAS','GAds ROAS','MER'],['#22c55e','#ef4444','#3b82f6','#06b6d4','#f59e0b','#a855f7','#f97316']);
+var netRev=sum(d.shopifyRev)-sum(d.shopifyReturns);
+populateStats('revenue-stats',[{label:'Total Shopify Rev',value:fmtMoney(sum(d.shopifyRev))},{label:'Total Returns',value:fmtMoney(sum(d.shopifyReturns))},{label:'Net Revenue',value:fmtMoney(netRev)},{label:'Total Meta Value',value:fmtMoney(sum(d.metaValue))},{label:'Total GAds Value',value:fmtMoney(sum(d.gadsValue))},{label:'Avg MER',value:fmtPct(avg(d.mer))}]);
+document.getElementById('lastUpdated').textContent='Last refreshed: '+new Date().toLocaleString()+' | Data pulled live from Google Sheets ('+labels.length+' weeks shown)'}
+
+function loadData(){
+document.getElementById('loadingOverlay').classList.remove('hidden');
+fetch(CSV_URL).then(function(r){if(!r.ok)throw new Error('HTTP '+r.status);return r.text()}).then(function(csv){
+var parsed=parseCSV(csv);var rows=parsed.rows;
+var d={fullDates:[],labels:[],metaSpend:[],metaImpressions:[],metaOutboundClicks:[],metaAddToCarts:[],metaPurchases:[],metaValue:[],metaPageEngagement:[],metaRoas:[],shopifyRev:[],shopifyReturns:[],gadsSpend:[],gadsImpressions:[],gadsClicks:[],gadsPurchases:[],gadsValue:[],gadsRoas:[],mer:[],totalPurchases:[]};
+rows.forEach(function(row){d.fullDates.push(row[0].trim());d.labels.push(shortenDateRange(row[0].trim()));d.metaSpend.push(cleanNum(row[1]));d.metaImpressions.push(cleanNum(row[2]));d.metaOutboundClicks.push(cleanNum(row[3]));d.metaAddToCarts.push(cleanNum(row[4]));d.metaPurchases.push(cleanNum(row[5]));d.metaValue.push(cleanNum(row[6]));d.metaPageEngagement.push(cleanNum(row[7]));d.metaRoas.push(cleanNum(row[8]));d.shopifyRev.push(cleanNum(row[9]));d.shopifyReturns.push(cleanNum(row[10]));d.gadsSpend.push(cleanNum(row[11]));d.gadsImpressions.push(cleanNum(row[12]));d.gadsClicks.push(cleanNum(row[13]));d.gadsPurchases.push(cleanNum(row[14]));d.gadsValue.push(cleanNum(row[15]));d.gadsRoas.push(cleanNum(row[16]));d.mer.push(cleanNum(row[17]));d.totalPurchases.push(cleanNum(row[5])+cleanNum(row[14]))});
+allData=d;
+populateDateDropdowns(d.fullDates);
+document.getElementById('filterInfo').textContent='Showing all '+d.fullDates.length+' weeks';
+buildDashboard(d);document.getElementById('loadingOverlay').classList.add('hidden');
+}).catch(function(err){document.getElementById('loadingOverlay').classList.add('hidden');alert('Failed to load data: '+err.message)})}
+
+loadData();
+</script>
+</body>
+</html>
