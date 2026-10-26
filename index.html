@@ -48,6 +48,9 @@ body{font-family:'Segoe UI',Tahoma,Geneva,Verdana,sans-serif;background:#0f1923;
 .icon-meta{background:#1e40af}
 .icon-gads{background:#059669}
 .icon-revenue{background:#d97706}
+.icon-klaviyo{background:#7c3aed}
+.section-note{font-size:13px;color:#8899aa;background:#152232;border:1px dashed #354555;border-radius:8px;padding:10px 14px;margin-bottom:16px}
+.section-note.hidden{display:none}
 .toggle-group{display:flex;gap:8px;flex-wrap:wrap}
 .toggle-btn{display:flex;align-items:center;gap:6px;padding:6px 14px;border-radius:20px;border:2px solid;background:transparent;color:#e0e6ed;font-size:12px;font-weight:600;cursor:pointer;transition:all .25s;user-select:none}
 .toggle-btn .dot{width:10px;height:10px;border-radius:50%;transition:all .25s}
@@ -68,7 +71,7 @@ body{font-family:'Segoe UI',Tahoma,Geneva,Verdana,sans-serif;background:#0f1923;
 </head>
 <body>
 <div class="loading-overlay" id="loadingOverlay"><div class="spinner"></div><div class="loading-text">Loading data from Google Sheets...</div></div>
-<div class="dashboard-header"><div><h1><span>ClenchAlert</span> &mdash; Weekly Performance Dashboard</h1><div class="subtitle" id="dateSubtitle">Meta Ads, Google Ads &amp; Shopify Analytics</div></div><div class="header-right"><button class="refresh-btn" onclick="loadData()">&#x21BB; Refresh Data</button><div class="header-badge">LIVE REPORT</div></div></div>
+<div class="dashboard-header"><div><h1><span>ClenchAlert</span> &mdash; Weekly Performance Dashboard</h1><div class="subtitle" id="dateSubtitle">Meta Ads, Google Ads, Klaviyo &amp; Shopify Analytics</div></div><div class="header-right"><button class="refresh-btn" onclick="loadData()">&#x21BB; Refresh Data</button><div class="header-badge">LIVE REPORT</div></div></div>
 <div class="date-filter-bar">
 <label>From:</label><select id="dateFrom" onchange="applyFilter()"></select>
 <label>To:</label><select id="dateTo" onchange="applyFilter()"></select>
@@ -85,14 +88,18 @@ body{font-family:'Segoe UI',Tahoma,Geneva,Verdana,sans-serif;background:#0f1923;
 <div class="dashboard-container">
 <div class="section"><div class="section-header"><div class="section-title"><div class="icon icon-meta">&#128241;</div>Meta Ads Performance</div><div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap"><div class="toggle-group" id="toggles-meta"></div><button class="expand-btn" onclick="toggleExpand(this,'metaChart','metaChartObj')">&#x2922; Expand</button></div></div><div class="chart-wrapper" id="metaChartWrap"><canvas id="metaChart"></canvas></div><div class="stats-row" id="meta-stats"></div></div>
 <div class="section"><div class="section-header"><div class="section-title"><div class="icon icon-gads">&#128202;</div>Google Ads Performance</div><div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap"><div class="toggle-group" id="toggles-gads"></div><button class="expand-btn" onclick="toggleExpand(this,'gadsChart','gadsChartObj')">&#x2922; Expand</button></div></div><div class="chart-wrapper" id="gadsChartWrap"><canvas id="gadsChart"></canvas></div><div class="stats-row" id="gads-stats"></div></div>
+<div class="section"><div class="section-header"><div class="section-title"><div class="icon icon-klaviyo">&#9993;</div>Klaviyo Email Performance</div><div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap"><div class="toggle-group" id="toggles-klaviyo"></div><button class="expand-btn" onclick="toggleExpand(this,'klaviyoChart','klaviyoChartObj')">&#x2922; Expand</button></div></div><div class="section-note hidden" id="klaviyo-note"></div><div class="chart-wrapper" id="klaviyoChartWrap"><canvas id="klaviyoChart"></canvas></div><div class="stats-row" id="klaviyo-stats"></div></div>
 <div class="section"><div class="section-header"><div class="section-title"><div class="icon icon-revenue">&#128176;</div>Revenue &amp; ROAS Overview</div><div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap"><div class="toggle-group" id="toggles-revenue"></div><button class="expand-btn" onclick="toggleExpand(this,'revenueChart','revenueChartObj')">&#x2922; Expand</button></div></div><div class="chart-wrapper" id="revenueChartWrap"><canvas id="revenueChart"></canvas></div><div class="stats-row" id="revenue-stats"></div></div>
 </div>
 <div class="last-updated" id="lastUpdated"></div>
 <script>
 /* Data source: Published Google Sheet via gviz CSV endpoint */
 const CSV_URL='https://docs.google.com/spreadsheets/d/1h8Hscx8_8jiHv_mFrAnWz67AfwigpRC5ma_Rpi4k50c/gviz/tq?tqx=out:csv';
-let metaChart=null,gadsChart=null,revenueChart=null;
+/* Klaviyo tab = live IMPORTRANGE of the EB Email KPI Matrix 'CLENCH ALERT' tab (cols A:Q, all text) */
+const KLAVIYO_CSV_URL='https://docs.google.com/spreadsheets/d/1h8Hscx8_8jiHv_mFrAnWz67AfwigpRC5ma_Rpi4k50c/gviz/tq?tqx=out:csv&headers=1&sheet=Klaviyo';
+let metaChart=null,gadsChart=null,klaviyoChart=null,revenueChart=null;
 let allData=null;
+let klaviyoStatus='ok';
 
 function parseCSV(csv){const lines=csv.trim().split('\n');const headers=parseCSVLine(lines[0]);const rows=[];for(let i=1;i<lines.length;i++){const vals=parseCSVLine(lines[i]);if(vals.length>=19&&vals[0].trim()!=='')rows.push(vals)}return{headers,rows}}
 
@@ -105,6 +112,40 @@ function fmtMoney(n){return '$'+n.toLocaleString('en-US',{minimumFractionDigits:
 function fmtPct(n){return Math.round(n)+'%'}
 function sum(arr){return arr.reduce((a,b)=>a+b,0)}
 function avg(arr){return arr.length?sum(arr)/arr.length:0}
+
+/* Klaviyo helpers. Sheet dates are typed in mixed formats (YY/MM/DD, DD/MM/YY, MM/DD/YY, date serials),
+   so each week is keyed by its Sunday start: pick the reading that is a Sunday and agrees with the end date (a Saturday). */
+var DAY=86400000;
+function isoDay(t){return new Date(t).toISOString().slice(0,10)}
+function dateCandidates(s){
+s=(s||'').trim();var out=[];
+if(/^\d{5}(\.\d+)?$/.test(s)){out.push(Date.UTC(1899,11,30)+Math.floor(parseFloat(s))*DAY);return out}
+var p=s.split(/[\/\-.]/);if(p.length!==3)return out;
+var a=parseInt(p[0],10),b=parseInt(p[1],10),c=parseInt(p[2],10);if(isNaN(a)||isNaN(b)||isNaN(c))return out;
+function yr(y){return y<100?2000+y:y}
+[[yr(c),b,a],[yr(c),a,b],[yr(a),b,c]].forEach(function(x){var y=x[0],m=x[1],d=x[2];if(m<1||m>12||d<1||d>31||y<2024||y>2030)return;var t=Date.UTC(y,m-1,d);if(new Date(t).getUTCDate()!==d)return;if(out.indexOf(t)<0)out.push(t)});
+return out}
+function weekKey(startStr,endStr,prevT){
+var S=dateCandidates(startStr).filter(function(t){return new Date(t).getUTCDay()===0});
+var E=dateCandidates(endStr).filter(function(t){return new Date(t).getUTCDay()===6}).map(function(t){return t-6*DAY});
+var all=S.concat(E.filter(function(t){return S.indexOf(t)<0}));if(!all.length)return null;
+var best=null,bestScore=-Infinity;
+all.forEach(function(t){var sc=(S.indexOf(t)>=0?2:0)+(E.indexOf(t)>=0?2:0);if(prevT)sc-=Math.abs(t-(prevT+7*DAY))/(7*DAY)*0.5;if(sc>bestScore){bestScore=sc;best=t}});
+return best}
+function klNum(s){s=(s||'').replace(/[$,%\s]/g,'');if(s===''||isNaN(s))return null;return parseFloat(s)}
+function klRate(s){var n=klNum(s);if(n===null)return null;return(/%/.test(s)||n>1)?n:n*100}
+function parseKlaviyo(csv){
+var map={},prevT=null,lines=csv.trim().split('\n');
+/* gviz silently falls back to the first tab when 'Klaviyo' is missing, so require the Klaviyo header */
+var head=parseCSVLine(lines[0]||'');if(head.length<17||!/start/i.test(head[0])||!/attributed/i.test(head[3]||''))return{};
+lines.forEach(function(line){
+var v=parseCSVLine(line);if(v.length<17||!v[0]||/start/i.test(v[0]))return;
+var t=weekKey(v[0],v[1],prevT);if(t===null)return;prevT=t;
+map[isoDay(t)]={totalRev:klNum(v[2]),attrRev:klNum(v[3]),campaignRev:klNum(v[4]),flowRev:klNum(v[5]),recipients:klNum(v[9]),openRate:klRate(v[10]),clickRate:klRate(v[11]),unsubRate:klRate(v[13]),emailSubs:klNum(v[15])}});
+return map}
+function present(arr){return arr.filter(function(v){return v!==null&&!isNaN(v)})}
+function lastPresent(arr){var p=present(arr);return p.length?p[p.length-1]:null}
+function weighted(vals,weights){var n=0,w=0;vals.forEach(function(v,i){var wt=weights[i];if(v!==null&&wt!==null&&wt>0){n+=v*wt;w+=wt}});return w?n/w:null}
 
 function weekChange(arr,dateLabels){
 if(arr.length<2)return{val:'N/A',dir:'up',current:'',previous:''};
@@ -211,7 +252,7 @@ var wrapper=document.getElementById(canvasId).parentElement;
 var isExpanded=wrapper.classList.toggle('expanded');
 btn.classList.toggle('active',isExpanded);
 btn.textContent=isExpanded?'\u2922 Collapse':'\u2922 Expand';
-var chartMap={metaChartObj:metaChart,gadsChartObj:gadsChart,revenueChartObj:revenueChart};
+var chartMap={metaChartObj:metaChart,gadsChartObj:gadsChart,klaviyoChartObj:klaviyoChart,revenueChartObj:revenueChart};
 var chart=chartMap[chartKey];
 if(chart){setTimeout(function(){chart.resize()},320)}}
 
@@ -222,9 +263,10 @@ setKPI('kpi-gads-spend',fmtMoney(sum(d.gadsSpend)),'kpi-gads-spend-ch',d.gadsSpe
 setKPI('kpi-shop-rev',fmtMoney(sum(d.shopifyRev)),'kpi-shop-rev-ch',d.shopifyRev,d.labels);
 setKPI('kpi-mer',fmtPct(d.mer[d.mer.length-1]),'kpi-mer-ch',d.mer,d.labels);
 setKPI('kpi-purchases',fmt(sum(d.totalPurchases)),'kpi-purchases-ch',d.totalPurchases,d.labels);
-if(labels.length>0){document.getElementById('dateSubtitle').textContent='Meta Ads, Google Ads & Shopify Analytics \u2022 '+d.fullDates[0]+' \u2013 '+d.fullDates[d.fullDates.length-1].split(' - ')[1]}
+if(labels.length>0){document.getElementById('dateSubtitle').textContent='Meta Ads, Google Ads, Klaviyo & Shopify Analytics \u2022 '+d.fullDates[0]+' \u2013 '+d.fullDates[d.fullDates.length-1].split(' - ')[1]}
 if(metaChart){metaChart.destroy();metaChart=null}
 if(gadsChart){gadsChart.destroy();gadsChart=null}
+if(klaviyoChart){klaviyoChart.destroy();klaviyoChart=null}
 if(revenueChart){revenueChart.destroy();revenueChart=null}
 
 /* Section 1: Meta Ads Performance */
@@ -253,7 +295,31 @@ gadsChart=new Chart(document.getElementById('gadsChart'),{type:'bar',data:{label
 createToggles('toggles-gads',gadsChart,['Spend','Impressions','Clicks','Purchases','Value','ROAS'],['#ef4444','#3b82f6','#22c55e','#a855f7','#06b6d4','#f59e0b']);
 populateStats('gads-stats',[{label:'Total Spend',value:fmtMoney(sum(d.gadsSpend))},{label:'Total Impressions',value:fmt(sum(d.gadsImpressions))},{label:'Total Clicks',value:fmt(sum(d.gadsClicks))},{label:'Total Purchases',value:fmt(sum(d.gadsPurchases))},{label:'Avg ROAS',value:fmtPct(avg(d.gadsRoas))}]);
 
-/* Section 3: Revenue & ROAS Overview */
+/* Section 3: Klaviyo Email Performance (weeks with no Klaviyo row show as gaps) */
+try{
+var klWeeks=present(d.klAttrRev).length;
+var klNote=document.getElementById('klaviyo-note');
+if(klaviyoStatus!=='ok'){klNote.textContent='Klaviyo data could not be loaded from Google Sheets. Click Refresh Data to try again.';klNote.classList.remove('hidden')}
+else if(klWeeks<labels.length){klNote.textContent=klWeeks===0?'No Klaviyo data for the selected weeks.':'Klaviyo data covers '+klWeeks+' of the '+labels.length+' weeks shown. Weeks with no Klaviyo data show as gaps.';klNote.classList.remove('hidden')}
+else{klNote.classList.add('hidden')}
+var klPctLabels=['Open Rate','Click Rate','Unsub Rate','Klaviyo Attr %'];
+klaviyoChart=new Chart(document.getElementById('klaviyoChart'),{type:'bar',data:{labels:labels,datasets:[
+{label:'Attributed Revenue',data:d.klAttrRev,backgroundColor:'#22c55e60',borderColor:'#22c55e',borderWidth:2,borderRadius:6,yAxisID:'y1',order:8},
+{label:'Campaign Revenue',data:d.klCampaignRev,type:'line',borderColor:'#3b82f6',backgroundColor:'#3b82f620',borderWidth:3,pointRadius:5,pointHoverRadius:8,pointBackgroundColor:'#3b82f6',pointBorderColor:'#fff',pointBorderWidth:2,tension:.3,yAxisID:'y1',order:7},
+{label:'Flow Revenue',data:d.klFlowRev,type:'line',borderColor:'#06b6d4',backgroundColor:'#06b6d420',borderWidth:3,pointRadius:5,pointHoverRadius:8,pointBackgroundColor:'#06b6d4',pointBorderColor:'#fff',pointBorderWidth:2,tension:.3,yAxisID:'y1',order:6},
+{label:'Recipients',data:d.klRecipients,type:'line',borderColor:'#a855f7',backgroundColor:'#a855f720',borderWidth:3,pointRadius:5,pointHoverRadius:8,pointBackgroundColor:'#a855f7',pointBorderColor:'#fff',pointBorderWidth:2,tension:.3,yAxisID:'y',order:5},
+{label:'Open Rate',data:d.klOpenRate,type:'line',borderColor:'#f59e0b',backgroundColor:'#f59e0b20',borderWidth:3,pointRadius:5,pointHoverRadius:8,pointBackgroundColor:'#f59e0b',pointBorderColor:'#fff',pointBorderWidth:2,tension:.3,yAxisID:'y3',order:4},
+{label:'Click Rate',data:d.klClickRate,type:'line',borderColor:'#ec4899',backgroundColor:'#ec489920',borderWidth:3,pointRadius:5,pointHoverRadius:8,pointBackgroundColor:'#ec4899',pointBorderColor:'#fff',pointBorderWidth:2,tension:.3,yAxisID:'y2',order:3},
+{label:'Unsub Rate',data:d.klUnsubRate,type:'line',borderColor:'#ef4444',backgroundColor:'#ef444420',borderWidth:2,pointRadius:4,pointHoverRadius:7,pointBackgroundColor:'#ef4444',pointBorderColor:'#fff',pointBorderWidth:2,tension:.3,yAxisID:'y2',order:2},
+{label:'Klaviyo Attr %',data:d.klAttrPct,type:'line',borderColor:'#f97316',backgroundColor:'#f9731620',borderWidth:3,pointRadius:6,pointHoverRadius:9,pointBackgroundColor:'#f97316',pointBorderColor:'#fff',pointBorderWidth:2,tension:.3,borderDash:[6,3],yAxisID:'y3',order:1}
+]},options:{responsive:true,maintainAspectRatio:false,interaction:{mode:'index',intersect:false},plugins:{legend:{display:false},tooltip:{...tooltipBase,filter:function(item){return item.parsed.y!==null},callbacks:{label:function(ctx){if(klPctLabels.includes(ctx.dataset.label))return ctx.dataset.label+': '+ctx.parsed.y.toFixed(2)+'%';if(ctx.dataset.label==='Recipients')return ctx.dataset.label+': '+ctx.parsed.y.toLocaleString();return ctx.dataset.label+': '+fmtMoney(ctx.parsed.y)}}}},scales:{x:{grid:{color:'rgba(255,255,255,0.06)'},ticks:{color:'#7a8fa3',font:{size:11}}},y:{type:'linear',position:'left',beginAtZero:true,title:{display:true,text:'Recipients',color:'#a855f7',font:{size:12,weight:'bold'}},grid:{color:'rgba(255,255,255,0.06)'},ticks:{color:'#a855f7',callback:function(v){return v>=1000?(v/1000).toFixed(1)+'K':v}}},y1:{type:'linear',position:'right',beginAtZero:true,title:{display:true,text:'Email Revenue ($)',color:'#22c55e',font:{size:12,weight:'bold'}},grid:{drawOnChartArea:false},ticks:{color:'#22c55e',callback:function(v){return'$'+(v>=1000?(v/1000).toFixed(1)+'K':v.toFixed(0))}}},y2:{type:'linear',display:false,beginAtZero:true},y3:{type:'linear',position:'right',beginAtZero:true,title:{display:true,text:'Open / Attr Rate (%)',color:'#f59e0b',font:{size:12,weight:'bold'}},grid:{drawOnChartArea:false},ticks:{color:'#f59e0b',callback:function(v){return v+'%'}}}}}});
+createToggles('toggles-klaviyo',klaviyoChart,['Attributed Rev','Campaign Rev','Flow Rev','Recipients','Open Rate','Click Rate','Unsub Rate','Attr %'],['#22c55e','#3b82f6','#06b6d4','#a855f7','#f59e0b','#ec4899','#ef4444','#f97316']);
+var klAttrShare=weighted(d.klAttrPct,d.klTotalRev),klOpen=weighted(d.klOpenRate,d.klRecipients),klClick=weighted(d.klClickRate,d.klRecipients),klSubs=lastPresent(d.klEmailSubs);
+function orDash(v,f){return(klWeeks&&v!==null)?f(v):'--'}
+populateStats('klaviyo-stats',[{label:'Attributed Revenue',value:orDash(sum(present(d.klAttrRev)),fmtMoney)},{label:'Campaign Revenue',value:orDash(sum(present(d.klCampaignRev)),fmtMoney)},{label:'Flow Revenue',value:orDash(sum(present(d.klFlowRev)),fmtMoney)},{label:'Klaviyo Attr %',value:orDash(klAttrShare,function(v){return v.toFixed(1)+'%'})},{label:'Total Sends',value:orDash(sum(present(d.klRecipients)),fmt)},{label:'Avg Open Rate',value:orDash(klOpen,function(v){return v.toFixed(1)+'%'})},{label:'Avg Click Rate',value:orDash(klClick,function(v){return v.toFixed(2)+'%'})},{label:'Email Subscribers',value:orDash(klSubs,fmt)}]);
+}catch(err){console.warn('Klaviyo card failed:',err.message);var klNote=document.getElementById('klaviyo-note');klNote.textContent='Klaviyo data could not be shown.';klNote.classList.remove('hidden')}
+
+/* Section 4: Revenue & ROAS Overview */
 revenueChart=new Chart(document.getElementById('revenueChart'),{type:'bar',data:{labels:labels,datasets:[
 {label:'Shopify Revenue',data:d.shopifyRev,backgroundColor:'#22c55e50',borderColor:'#22c55e',borderWidth:2,borderRadius:6,yAxisID:'y',order:8},
 {label:'Shopify Returns',data:d.shopifyReturns,backgroundColor:'#ef444450',borderColor:'#ef4444',borderWidth:2,borderRadius:6,yAxisID:'y',order:7},
@@ -271,9 +337,16 @@ document.getElementById('lastUpdated').textContent='Last refreshed: '+new Date()
 
 function loadData(){
 document.getElementById('loadingOverlay').classList.remove('hidden');
-fetch(CSV_URL).then(function(r){if(!r.ok)throw new Error('HTTP '+r.status);return r.text()}).then(function(csv){
+/* Klaviyo is optional: if its tab fails to load, the rest of the dashboard still renders */
+var klaviyoReq=Promise.race([fetch(KLAVIYO_CSV_URL),new Promise(function(_,rej){setTimeout(function(){rej(new Error('timeout'))},10000)})]).then(function(r){if(!r.ok)throw new Error('HTTP '+r.status);return r.text()}).then(function(csv){var m=parseKlaviyo(csv);if(!Object.keys(m).length)throw new Error('no rows');return m}).catch(function(err){console.warn('Klaviyo load failed:',err.message);return null});
+Promise.all([fetch(CSV_URL).then(function(r){if(!r.ok)throw new Error('HTTP '+r.status);return r.text()}),klaviyoReq]).then(function(res){
+var csv=res[0],kl=res[1];klaviyoStatus=kl?'ok':'error';kl=kl||{};
 var parsed=parseCSV(csv);var rows=parsed.rows;
-var d={fullDates:[],labels:[],metaSpend:[],metaImpressions:[],metaOutboundClicks:[],metaAddToCarts:[],metaPurchases:[],metaValue:[],metaPageEngagement:[],metaRoas:[],shopifyRev:[],shopifyReturns:[],shopifyReturnsPct:[],gadsSpend:[],gadsImpressions:[],gadsClicks:[],gadsPurchases:[],gadsValue:[],gadsRoas:[],mer:[],totalPurchases:[]};
+var d={fullDates:[],labels:[],metaSpend:[],metaImpressions:[],metaOutboundClicks:[],metaAddToCarts:[],metaPurchases:[],metaValue:[],metaPageEngagement:[],metaRoas:[],shopifyRev:[],shopifyReturns:[],shopifyReturnsPct:[],gadsSpend:[],gadsImpressions:[],gadsClicks:[],gadsPurchases:[],gadsValue:[],gadsRoas:[],mer:[],totalPurchases:[],klTotalRev:[],klAttrRev:[],klCampaignRev:[],klFlowRev:[],klRecipients:[],klOpenRate:[],klClickRate:[],klUnsubRate:[],klEmailSubs:[],klAttrPct:[]};
+var prevWeek=null;
+rows.forEach(function(row){var parts=row[0].split(/\s+-\s*|\s*-\s+/);var t=weekKey(parts[0],parts[1]||'',prevWeek);if(t!==null)prevWeek=t;var k=(t!==null&&kl[isoDay(t)])||{};
+['totalRev','attrRev','campaignRev','flowRev','recipients','openRate','clickRate','unsubRate','emailSubs'].forEach(function(f){d['kl'+f.charAt(0).toUpperCase()+f.slice(1)].push(k[f]===undefined?null:k[f])});
+d.klAttrPct.push(k.attrRev!=null&&k.totalRev>0?k.attrRev/k.totalRev*100:null)});
 rows.forEach(function(row){d.fullDates.push(row[0].trim());d.labels.push(shortenDateRange(row[0].trim()));d.metaSpend.push(cleanNum(row[1]));d.metaImpressions.push(cleanNum(row[2]));d.metaOutboundClicks.push(cleanNum(row[3]));d.metaAddToCarts.push(cleanNum(row[4]));d.metaPurchases.push(cleanNum(row[5]));d.metaValue.push(cleanNum(row[6]));d.metaPageEngagement.push(cleanNum(row[7]));d.metaRoas.push(cleanNum(row[8]));d.shopifyRev.push(cleanNum(row[9]));d.shopifyReturns.push(cleanNum(row[10]));d.shopifyReturnsPct.push(cleanNum(row[11]));d.gadsSpend.push(cleanNum(row[12]));d.gadsImpressions.push(cleanNum(row[13]));d.gadsClicks.push(cleanNum(row[14]));d.gadsPurchases.push(cleanNum(row[15]));d.gadsValue.push(cleanNum(row[16]));d.gadsRoas.push(cleanNum(row[17]));d.mer.push(cleanNum(row[18]));d.totalPurchases.push(cleanNum(row[5])+cleanNum(row[15]))});
 allData=d;
 populateDateDropdowns(d.fullDates);
