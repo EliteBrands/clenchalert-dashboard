@@ -95,8 +95,11 @@ body{font-family:'Segoe UI',Tahoma,Geneva,Verdana,sans-serif;background:#0f1923;
 <script>
 /* Data source: Published Google Sheet via gviz CSV endpoint */
 const CSV_URL='https://docs.google.com/spreadsheets/d/1h8Hscx8_8jiHv_mFrAnWz67AfwigpRC5ma_Rpi4k50c/gviz/tq?tqx=out:csv';
-/* Klaviyo tab = live IMPORTRANGE of the EB Email KPI Matrix 'CLENCH ALERT' tab (cols A:Q, all text) */
+/* Klaviyo tab = live IMPORTRANGE of the EB Email KPI Matrix 'CLENCH ALERT' tab (header + rows 39 down, cols A:Q, all text).
+   Rows 2-38 of that tab are hidden rows from another client (tab was copied), so they are never imported,
+   and any week before ClenchAlert's first Klaviyo week is dropped here as a second guard. */
 const KLAVIYO_CSV_URL='https://docs.google.com/spreadsheets/d/1h8Hscx8_8jiHv_mFrAnWz67AfwigpRC5ma_Rpi4k50c/gviz/tq?tqx=out:csv&headers=1&sheet=Klaviyo';
+const KLAVIYO_FIRST_WEEK='2026-09-13';
 let metaChart=null,gadsChart=null,klaviyoChart=null,revenueChart=null;
 let allData=null;
 let klaviyoStatus='ok';
@@ -141,6 +144,7 @@ var head=parseCSVLine(lines[0]||'');if(head.length<17||!/start/i.test(head[0])||
 lines.forEach(function(line){
 var v=parseCSVLine(line);if(v.length<17||!v[0]||/start/i.test(v[0]))return;
 var t=weekKey(v[0],v[1],prevT);if(t===null)return;prevT=t;
+if(isoDay(t)<KLAVIYO_FIRST_WEEK)return;
 map[isoDay(t)]={totalRev:klNum(v[2]),attrRev:klNum(v[3]),campaignRev:klNum(v[4]),flowRev:klNum(v[5]),recipients:klNum(v[9]),openRate:klRate(v[10]),clickRate:klRate(v[11]),unsubRate:klRate(v[13]),emailSubs:klNum(v[15])}});
 return map}
 function present(arr){return arr.filter(function(v){return v!==null&&!isNaN(v)})}
@@ -300,7 +304,7 @@ try{
 var klWeeks=present(d.klAttrRev).length;
 var klNote=document.getElementById('klaviyo-note');
 if(klaviyoStatus!=='ok'){klNote.textContent='Klaviyo data could not be loaded from Google Sheets. Click Refresh Data to try again.';klNote.classList.remove('hidden')}
-else if(klWeeks<labels.length){klNote.textContent=klWeeks===0?'No Klaviyo data for the selected weeks.':'Klaviyo data covers '+klWeeks+' of the '+labels.length+' weeks shown. Weeks with no Klaviyo data show as gaps.';klNote.classList.remove('hidden')}
+else if(klWeeks<labels.length){klNote.textContent=klWeeks===0?'No Klaviyo data for the selected weeks.':'Klaviyo data covers '+klWeeks+' of the '+labels.length+' weeks shown. ClenchAlert Klaviyo reporting starts with the week of 13 Sep 2026; weeks with no Klaviyo data show as gaps. Set "From" to 09/13 to focus on it.';klNote.classList.remove('hidden')}
 else{klNote.classList.add('hidden')}
 var klPctLabels=['Open Rate','Click Rate','Unsub Rate','Klaviyo Attr %'];
 klaviyoChart=new Chart(document.getElementById('klaviyoChart'),{type:'bar',data:{labels:labels,datasets:[
