@@ -138,14 +138,18 @@ return best}
 function klNum(s){s=(s||'').replace(/[$,%\s]/g,'');if(s===''||isNaN(s))return null;return parseFloat(s)}
 function klRate(s){var n=klNum(s);if(n===null)return null;return(/%/.test(s)||n>1)?n:n*100}
 function parseKlaviyo(csv){
-var map={},prevT=null,lines=csv.trim().split('\n');
+var map={},prevT=null,bad=false,lines=csv.trim().split('\n');
 /* gviz silently falls back to the first tab when 'Klaviyo' is missing, so require the Klaviyo header */
 var head=parseCSVLine(lines[0]||'');if(head.length<17||!/start/i.test(head[0])||!/attributed/i.test(head[3]||''))return{};
 lines.forEach(function(line){
 var v=parseCSVLine(line);if(v.length<17||!v[0]||/start/i.test(v[0]))return;
-var t=weekKey(v[0],v[1],prevT);if(t===null)return;prevT=t;
+var t=weekKey(v[0],v[1],prevT);if(t===null)return;
+/* a repeated or out-of-order week means rows moved in the source tab and may be another client's: refuse the whole tab */
+if(map[isoDay(t)]||(prevT!==null&&t<prevT)){bad=true;return}
+prevT=t;
 if(isoDay(t)<KLAVIYO_FIRST_WEEK)return;
 map[isoDay(t)]={totalRev:klNum(v[2]),attrRev:klNum(v[3]),campaignRev:klNum(v[4]),flowRev:klNum(v[5]),recipients:klNum(v[9]),openRate:klRate(v[10]),clickRate:klRate(v[11]),unsubRate:klRate(v[13]),emailSubs:klNum(v[15])}});
+if(bad){console.warn('Klaviyo tab refused: repeated or out-of-order weeks');return{}}
 return map}
 function present(arr){return arr.filter(function(v){return v!==null&&!isNaN(v)})}
 function lastPresent(arr){var p=present(arr);return p.length?p[p.length-1]:null}
